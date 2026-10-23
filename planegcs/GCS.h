@@ -569,6 +569,7 @@ public:
     }
 
     int diagnose(Algorithm alg = DogLeg);
+    int diagnoseFull();
     int dofsNumber() const
     {
         return hasDiagnosis ? dofs : -1;

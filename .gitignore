@@ -1,5 +1,55 @@
-dist
-planegcs_dist
-coverage
-node_modules
-out
+# Dependencies and package output
+node_modules/
+planegcs_dist/
+dist/
+
+# Test and coverage output
+coverage/
+*.log
+*.tsbuildinfo
+
+# CMake builds (including accidental in-source configuration)
+/build/
+/planegcs/bin/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+Makefile
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.slnx
+
+# MSVC and linker artifacts
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.tlog
+*.lastbuildstate
+*.idb
+*.pch
+*.res
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.VC.db
+*.VC.VC.opendb
+
+# Native planegcs build
+native/build/
+native/out/
+
+# Vendored dependency archives and temporary extraction directory
+third_party/*.zip
+third_party/eigen.extract/
+
+# OS noise
+.DS_Store
+Thumbs.db

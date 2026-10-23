@@ -33,8 +33,6 @@
 #include <cassert>
 #endif
 
-#include <boost/graph/graph_concepts.hpp>
-
 #include "Constraints.h"
 
 

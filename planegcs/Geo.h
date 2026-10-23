@@ -24,7 +24,6 @@
 #define PLANEGCS_GEO_H
 
 #include "Util.h"
-#include <boost/math/constants/constants.hpp>
 
 #ifdef _MSC_VER
 #pragma warning(disable : 4251)

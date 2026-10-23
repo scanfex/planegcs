@@ -52,6 +52,8 @@
 #include <limits>
 #include <numbers>
 
+#include <Eigen/SVD>
+
 #include "GCS.h"
 #include "qp_eq.h"
 
@@ -98,9 +100,6 @@
 #define BOOST_NO_CXX98_FUNCTION_BASE
 #include <Console.h>
 #include <FCConfig.h>
-
-#include <boost/graph/connected_components.hpp>
-#include <boost_graph_adjacency_list.hpp>
 
 using MatrixIndexType = Eigen::FullPivHouseholderQR<Eigen::MatrixXd>::IntDiagSizeVectorType;
 
@@ -449,8 +448,6 @@ void SolverReportingManager::LogMatrix(const std::string str, MatrixIndexType ma
 }
 #endif
 
-
-using Graph = boost::adjacency_list<boost::vecS, boost::vecS, boost::undirectedS>;
 
 ///////////////////////////////////////
 // Solver
@@ -1854,10 +1851,36 @@ void System::initSolution(Algorithm alg)
     }
 
     // partitioning into decoupled components
-    Graph g;
-    for (int i = 0; i < int(plist.size() + clistR.size()); i++) {
-        boost::add_vertex(g);
+    // (union-find implementation replaces the former Boost.Graph dependency)
+    const int vertexCount = int(plist.size() + clistR.size());
+    std::vector<int> parent(vertexCount);
+    std::vector<int> rank(vertexCount, 0);
+    for (int i = 0; i < vertexCount; ++i) {
+        parent[i] = i;
     }
+
+    auto findRoot = [&parent](int x) {
+        while (parent[x] != x) {
+            parent[x] = parent[parent[x]];
+            x = parent[x];
+        }
+        return x;
+    };
+
+    auto unite = [&parent, &rank, &findRoot](int a, int b) {
+        a = findRoot(a);
+        b = findRoot(b);
+        if (a == b) {
+            return;
+        }
+        if (rank[a] < rank[b]) {
+            std::swap(a, b);
+        }
+        parent[b] = a;
+        if (rank[a] == rank[b]) {
+            ++rank[a];
+        }
+    };
 
     int cvtid = int(plist.size());
     for (const auto constr : clistR) {
@@ -1865,16 +1888,21 @@ void System::initSolution(Algorithm alg)
         for (const auto param : cparams) {
             MAP_pD_I::const_iterator it = pIndex.find(param);
             if (it != pIndex.end()) {
-                boost::add_edge(cvtid, it->second, g);
+                unite(cvtid, it->second);
             }
         }
         ++cvtid;
     }
 
-    VEC_I components(boost::num_vertices(g));
+    VEC_I components(vertexCount);
+    std::vector<int> rootToComponent(vertexCount, -1);
     int componentsSize = 0;
-    if (!components.empty()) {
-        componentsSize = boost::connected_components(g, &components[0]);
+    for (int i = 0; i < vertexCount; ++i) {
+        int root = findRoot(i);
+        if (rootToComponent[root] < 0) {
+            rootToComponent[root] = componentsSize++;
+        }
+        components[i] = rootToComponent[root];
     }
 
     // identification of equality constraints and parameter reduction
@@ -4853,6 +4881,106 @@ void System::makeReducedJacobian(Eigen::MatrixXd& J,
     if (jacobianconstraintcount == 0) {  // only driven constraints
         J.resize(0, 0);
     }
+}
+
+namespace
+{
+int denseRank(Eigen::MatrixXd matrix)
+{
+    if (matrix.rows() == 0 || matrix.cols() == 0) {
+        return 0;
+    }
+
+    for (int column = 0; column < matrix.cols(); ++column) {
+        double norm = matrix.col(column).norm();
+        if (norm > 0.0) {
+            matrix.col(column) /= norm;
+        }
+    }
+
+    for (int row = 0; row < matrix.rows(); ++row) {
+        double norm = matrix.row(row).norm();
+        if (norm > 0.0) {
+            matrix.row(row) /= norm;
+        }
+    }
+
+    Eigen::JacobiSVD<Eigen::MatrixXd> svd(
+        matrix,
+        Eigen::ComputeThinU | Eigen::ComputeThinV);
+
+    if (svd.singularValues().size() == 0) {
+        return 0;
+    }
+
+    const double largest = svd.singularValues()(0);
+    const double tolerance = 1e-9 * largest;
+    int rank = 0;
+
+    for (int index = 0; index < svd.singularValues().size(); ++index) {
+        if (svd.singularValues()(index) > tolerance) {
+            ++rank;
+        }
+    }
+
+    return rank;
+}
+}
+
+int System::diagnoseFull()
+{
+    hasDiagnosis = false;
+    dofs = -1;
+    redundantTags.clear();
+
+    if (!hasUnknowns) {
+        return dofs;
+    }
+
+    Eigen::MatrixXd jacobian;
+    std::map<int, int> jacobianconstraintmap;
+    VEC_pD pdiagnoselist;
+    std::map<int, int> tagmultiplicity;
+
+    makeReducedJacobian(jacobian, jacobianconstraintmap, pdiagnoselist, tagmultiplicity);
+
+    Eigen::MatrixXd driving(jacobianconstraintmap.size(), pdiagnoselist.size());
+    std::vector<int> tags;
+    tags.reserve(jacobianconstraintmap.size());
+
+    int row = 0;
+    for (const auto& entry : jacobianconstraintmap) {
+        driving.row(row) = jacobian.row(entry.first);
+        tags.push_back(clist[entry.second]->getTag());
+        ++row;
+    }
+
+    const int rank = denseRank(driving);
+    dofs = static_cast<int>(pdiagnoselist.size()) - rank;
+    hasDiagnosis = true;
+    emptyDiagnoseMatrix = driving.rows() == 0;
+
+    for (int index = 0; index < driving.rows(); ++index) {
+        Eigen::MatrixXd reduced(driving.rows() - 1, driving.cols());
+        int destination = 0;
+        for (int source = 0; source < driving.rows(); ++source) {
+            if (source == index) {
+                continue;
+            }
+            reduced.row(destination++) = driving.row(source);
+        }
+
+        if (denseRank(reduced) == rank) {
+            redundantTags.push_back(tags[index]);
+        }
+    }
+
+    std::sort(redundantTags.begin(), redundantTags.end());
+    redundantTags.erase(
+        std::unique(redundantTags.begin(), redundantTags.end()),
+        redundantTags.end());
+
+    return dofs;
 }
 
 int System::diagnose(Algorithm alg)
