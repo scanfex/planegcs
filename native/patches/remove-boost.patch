@@ -1,9 +1,9 @@
 diff --git a/planegcs/Constraints.cpp b/planegcs/Constraints.cpp
-index 336d20e..efb2772 100644
+index e35c3c9..7ebb44d 100644
 --- a/planegcs/Constraints.cpp
 +++ b/planegcs/Constraints.cpp
-@@ -33,8 +33,6 @@
- #include <cassert>
+@@ -35,8 +35,6 @@
+ # include <cassert>
  #endif
  
 -#include <boost/graph/graph_concepts.hpp>
@@ -12,11 +12,11 @@ index 336d20e..efb2772 100644
  
  
 diff --git a/planegcs/GCS.cpp b/planegcs/GCS.cpp
-index d48236b..e95b711 100644
+index e6327c6..37adef5 100644
 --- a/planegcs/GCS.cpp
 +++ b/planegcs/GCS.cpp
-@@ -99,9 +99,6 @@
- #include <Console.h>
+@@ -103,9 +103,6 @@
+ #include <Base/Console.h>
  #include <FCConfig.h>
  
 -#include <boost/graph/connected_components.hpp>
@@ -25,7 +25,7 @@ index d48236b..e95b711 100644
  using MatrixIndexType = Eigen::FullPivHouseholderQR<Eigen::MatrixXd>::IntDiagSizeVectorType;
  
  #ifndef EIGEN_STOCK_FULLPIVLU_COMPUTE
-@@ -450,8 +447,6 @@ void SolverReportingManager::LogMatrix(const std::string str, MatrixIndexType ma
+@@ -460,8 +457,6 @@ void SolverReportingManager::LogMatrix(const std::string str, MatrixIndexType ma
  #endif
  
  
@@ -34,7 +34,7 @@ index d48236b..e95b711 100644
  ///////////////////////////////////////
  // Solver
  ///////////////////////////////////////
-@@ -1854,10 +1849,36 @@ void System::initSolution(Algorithm alg)
+@@ -1781,10 +1776,36 @@ void System::initSolution(Algorithm alg)
      }
  
      // partitioning into decoupled components
@@ -75,7 +75,7 @@ index d48236b..e95b711 100644
  
      int cvtid = int(plist.size());
      for (const auto constr : clistR) {
-@@ -1865,16 +1886,21 @@ void System::initSolution(Algorithm alg)
+@@ -1792,16 +1813,21 @@ void System::initSolution(Algorithm alg)
          for (const auto param : cparams) {
              MAP_pD_I::const_iterator it = pIndex.find(param);
              if (it != pIndex.end()) {
@@ -102,14 +102,14 @@ index d48236b..e95b711 100644
  
      // identification of equality constraints and parameter reduction
 diff --git a/planegcs/Geo.h b/planegcs/Geo.h
-index dfa4286..82ca856 100644
+index ffe8aff..b941634 100644
 --- a/planegcs/Geo.h
 +++ b/planegcs/Geo.h
-@@ -24,7 +24,6 @@
- #define PLANEGCS_GEO_H
+@@ -25,7 +25,6 @@
+ #pragma once
  
  #include "Util.h"
 -#include <boost/math/constants/constants.hpp>
+ #include "../../SketcherGlobal.h"
  
  #ifdef _MSC_VER
- #pragma warning(disable : 4251)

@@ -3,6 +3,11 @@
 This directory adds a plain C ABI DLL around the PlaneGCS sources that already
 live in `../planegcs`. It does not use Emscripten, JavaScript or Node.js.
 
+The vendored sources track FreeCAD `main`. The current snapshot is
+`74168a8ae2d0c1a6e3006297673a871e8c1c8399` (2026-10-28), which includes the
+signed `addConstraintP2LDistance(..., bool ccw, ...)` and
+`addConstraintTangent(..., bool ccw, ...)` overloads.
+
 The build was verified with:
 
 * Windows 10/11 x64
@@ -17,7 +22,9 @@ native/
   build.ps1               bootstrap + configure + build
   include/
     planegcs_native.h     public C API
-    Console.h             native replacement for the Emscripten logging shim
+    Console.h             legacy native replacement for the Emscripten logging shim
+    Base/Console.h        native replacement for FreeCAD Base::Console (std::format)
+    Base/Tools.h          empty native replacement for FreeCAD Base/Tools.h
     planegcs_prelude.h    headers that MSVC does not include transitively
   patches/
     remove-boost.patch    the Boost removal applied to the upstream sources
@@ -28,6 +35,9 @@ native/
 
 third_party/eigen/        vendored Eigen 3.4.0 headers (MPL2)
 ```
+
+The native build uses C++23 because current FreeCAD planegcs uses
+`std::unreachable` and other C++23 library facilities.
 
 Build outputs go to `native/out/<Configuration>/`:
 
@@ -101,8 +111,9 @@ Important points:
 * Constraint tags are supplied by the caller and are returned by the diagnostic
   functions (`pgcs_get_conflicting`, `pgcs_get_redundant`,
   `pgcs_get_partially_redundant`).
-* `pgcs_solve` returns `0` (Success), `1` (Converged) or `2` (Failed); negative
-  values are errors. `pgcs_last_error` describes the last error.
+* `pgcs_solve` returns `0` (Success), `1` (Converged), `2` (Failed) or
+  `3` (SuccessfulSolutionInvalid); negative values are errors.
+  `pgcs_last_error` describes the last error.
 * `pgcs_diagnose` recomputes DoF, conflicting and redundant tags on the current
   parameter values. Call it after `pgcs_apply_solution()` so the diagnostics
   describe the solved geometry; `pgcs_dof` returns the last computed diagnosis.
@@ -112,6 +123,14 @@ Important points:
   nonlinear dependencies, while the full dense rank sees them.
 * Algorithm values match `GCS::Algorithm`: BFGS = 0, Levenberg-Marquardt = 1,
   DogLeg = 2.
+* `pgcs_add_p2l_distance`, `pgcs_add_c2l_distance` and the line-circle/line-arc
+  `pgcs_add_tangent_*` functions take a `ccw` flag. It selects the positive
+  (counter-clockwise) or negative side of the directed line `p1 -> p2`. The
+  constraints are signed, so the side must be chosen from the initial geometry
+  when the previous unsigned behavior is required.
+* `pgcs_add_c2l_distance` also takes an `internal` flag. `internal = 0` measures
+  the gap outside the circle (`radius + distance`), `internal = 1` measures it
+  inside (`radius - distance`).
 
 ## Why Boost is not needed
 
@@ -134,9 +153,22 @@ git apply native/patches/remove-boost.patch
 
 The patch is portable: the browser/WASM build can use the same sources.
 
+Other local changes on top of the FreeCAD snapshot are kept in the sources
+themselves: removing the FreeCAD `SketcherGlobal.h`/`SketcherExport` dependency,
+the union-find component partitioning, and the native-only
+`System::diagnoseFull()` full-Jacobian rank diagnosis. `planegcs/update_freecad.sh`
+applies the textual FreeCAD patches; the Boost and `diagnoseFull` changes must be
+carried over separately if the snapshot is replaced. That script also comments
+out the two `fut.wait()` calls for the WASM build; the native snapshot keeps
+them, so restore both calls when regenerating native sources.
+
 `native/include/planegcs_prelude.h` is force-included with `/FI` for MSVC. The
 upstream code relied on libstdc++/Emscripten to pull in `<cmath>`, `<cassert>`,
 etc. transitively; MSVC does not.
+
+`native/include/Base/Console.h` and `Base/Tools.h` replace the corresponding
+FreeCAD base headers. `Base::Console` is silent unless
+`-DPLANEGCS_NATIVE_VERBOSE=ON` is passed to CMake.
 
 The library is silent by default. Pass `-DPLANEGCS_NATIVE_VERBOSE=ON` to CMake
 (or `-DPLANEGCS_NATIVE_VERBOSE=ON` after configuring) to mirror the PlaneGCS
@@ -148,8 +180,8 @@ redundant tags) are always available through the API.
 The C# P/Invoke wrapper is in the AutoConstraint repository:
 
 ```
-src/Planegcs.Native/         PlanegcsContext, enums, PlanegcsException
-src/Planegcs.Native.Demo/    console smoke test
+src/Integrations/Planegcs.Native/   PlanegcsContext, enums, PlanegcsException
+src/Apps/Planegcs.Native.Demo/      console smoke test
 ```
 
 `Planegcs.Native.dll` (managed) has no reference to AutoConstraint types. Copy

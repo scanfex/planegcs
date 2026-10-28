@@ -104,6 +104,50 @@ int solve_distance()
     return ok ? 0 : 1;
 }
 
+int solve_p2l_distance_ccw_side(bool ccw, double expectedY)
+{
+    pgcs_context* context = pgcs_create();
+
+    if (context == nullptr) {
+        std::printf("p2l-ccw:    failed to create context\n");
+        return 1;
+    }
+
+    const int x1 = pgcs_add_param(context, 0.0, 1);
+    const int y1 = pgcs_add_param(context, 0.0, 1);
+    const int x2 = pgcs_add_param(context, 10.0, 1);
+    const int y2 = pgcs_add_param(context, 0.0, 1);
+    const int pointX = pgcs_add_param(context, 0.0, 1);
+    const int pointY = pgcs_add_param(context, 5.0, 0);
+    const int distance = pgcs_add_param(context, 2.0, 1);
+
+    const int p1 = pgcs_add_point(context, x1, y1);
+    const int p2 = pgcs_add_point(context, x2, y2);
+    const int point = pgcs_add_point(context, pointX, pointY);
+    const int line = pgcs_add_line(context, p1, p2);
+
+    const int tag = pgcs_add_p2l_distance(context, point, line, distance, ccw ? 1 : 0, 1, 1, 1.0);
+    const int status = pgcs_solve(context, PGCS_ALGORITHM_DOG_LEG);
+    const int applied = pgcs_apply_solution(context);
+
+    double solvedY = 0.0;
+    pgcs_get_param(context, pointY, &solvedY);
+
+    std::printf("p2l-ccw(%d): tag=%d status=%d apply=%d y=%g error='%s'\n",
+                ccw ? 1 : 0,
+                tag,
+                status,
+                applied,
+                solvedY,
+                pgcs_last_error(context));
+
+    const bool ok = tag == 1 && status == PGCS_RESULT_SUCCESS && applied == 0
+                    && near(solvedY, expectedY, 1e-4);
+
+    pgcs_destroy(context);
+    return ok ? 0 : 1;
+}
+
 int solve_scale_free_shape()
 {
     pgcs_context* context = pgcs_create();
@@ -169,7 +213,10 @@ int main()
 {
     std::printf("planegcs_native version: %s\n", pgcs_version());
 
-    const int failures = solve_coincidence() + solve_distance() + solve_scale_free_shape();
+    const int failures = solve_coincidence() + solve_distance()
+                         + solve_p2l_distance_ccw_side(true, 2.0)
+                         + solve_p2l_distance_ccw_side(false, -2.0)
+                         + solve_scale_free_shape();
 
     if (failures == 0) {
         std::printf("smoke test: OK\n");

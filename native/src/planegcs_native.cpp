@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <new>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -270,7 +271,7 @@ extern "C"
 
 PGCS_API const char* pgcs_version(void)
 {
-    return "0.1.1";
+    return "0.2.0";
 }
 
 PGCS_API pgcs_context* pgcs_create(void)
@@ -588,6 +589,7 @@ PGCS_API int pgcs_add_p2l_distance(pgcs_context* context,
                                    int point,
                                    int line,
                                    int distance_param,
+                                   int ccw,
                                    int tag,
                                    int driving,
                                    double scale)
@@ -596,6 +598,7 @@ PGCS_API int pgcs_add_p2l_distance(pgcs_context* context,
         return context->system.addConstraintP2LDistance(require_point(context, point),
                                                         require_line(context, line),
                                                         require_param(context, distance_param),
+                                                        ccw != 0,
                                                         tag,
                                                         driving != 0);
     });
@@ -630,6 +633,7 @@ PGCS_API int pgcs_add_c2c_distance(pgcs_context* context,
         return context->system.addConstraintC2CDistance(require_circle(context, circle1),
                                                         require_circle(context, circle2),
                                                         require_param(context, distance_param),
+                                                        std::nullopt,
                                                         tag,
                                                         driving != 0);
     });
@@ -639,6 +643,8 @@ PGCS_API int pgcs_add_c2l_distance(pgcs_context* context,
                                    int circle,
                                    int line,
                                    int distance_param,
+                                   int ccw,
+                                   int internal,
                                    int tag,
                                    int driving,
                                    double scale)
@@ -647,6 +653,8 @@ PGCS_API int pgcs_add_c2l_distance(pgcs_context* context,
         return context->system.addConstraintC2LDistance(require_circle(context, circle),
                                                         require_line(context, line),
                                                         require_param(context, distance_param),
+                                                        ccw != 0,
+                                                        internal != 0,
                                                         tag,
                                                         driving != 0);
     });
@@ -894,26 +902,31 @@ PGCS_API int pgcs_add_symmetric_point(pgcs_context* context,
 PGCS_API int pgcs_add_tangent_line_circle(pgcs_context* context,
                                           int line,
                                           int circle,
+                                          int ccw,
                                           int tag,
                                           int driving,
                                           double scale)
 {
     return add_constraint(context, tag, driving, scale, [&]() {
-        return context->system.addConstraintTangent(
-            require_line(context, line), require_circle(context, circle), tag, driving != 0);
+        return context->system.addConstraintTangent(require_line(context, line),
+                                                    require_circle(context, circle),
+                                                    ccw != 0,
+                                                    tag,
+                                                    driving != 0);
     });
 }
 
 PGCS_API int pgcs_add_tangent_line_arc(pgcs_context* context,
                                        int line,
                                        int arc,
+                                       int ccw,
                                        int tag,
                                        int driving,
                                        double scale)
 {
     return add_constraint(context, tag, driving, scale, [&]() {
         return context->system.addConstraintTangent(
-            require_line(context, line), require_arc(context, arc), tag, driving != 0);
+            require_line(context, line), require_arc(context, arc), ccw != 0, tag, driving != 0);
     });
 }
 
@@ -972,8 +985,8 @@ PGCS_API int pgcs_solve(pgcs_context* context, int algorithm)
             }
         }
 
-        return context->system.solve(
-            unknowns, true, static_cast<Algorithm>(algorithm));
+        return static_cast<int>(
+            context->system.solve(unknowns, static_cast<Algorithm>(algorithm), false));
     });
 }
 

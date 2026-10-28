@@ -39,8 +39,6 @@ mv FreeCAD/src/FCGlobal.h headers
 rm -rf FreeCAD
 
 # apply patches
-npx tsx patch_file.ts GCS.cpp "Base::Console().Log" "Console::Log"
-npx tsx patch_file.ts GCS.cpp "<Base/Console.h>" "<Console.h>"
 # disable using std::async (not available in emscripten without use of web workers)
 # todo: fix following two (don't work after indentation changes)
 # npx tsx patch_file.ts GCS.cpp \
@@ -55,15 +53,6 @@ npx tsx patch_file.ts GCS.cpp \
      "initSolution(alg);"
 
 npx tsx patch_file.ts headers/FCConfig.h "defined(linux)" "defined(unix)"
-
-npx tsx patch_file.ts headers/FCGlobal.h "#include <QtCore.h>" ""
-
-# add Boost flag to avoid using std::unary_function, which doesn't work with newer clang
-# https://github.com/boostorg/container_hash/issues/22
-npx tsx patch_file.ts GCS.cpp \
-     "#include <Console.h>" \
-     "#define BOOST_NO_CXX98_FUNCTION_BASE
-#include <Console.h>"
 
 # SketcherGlobal.h includes macro SketcherExport, which is not necessary for our purposes, so we remove it
 # (it only confuses the cpp parser)
@@ -90,4 +79,8 @@ npx tsx patch_file.ts Geo.h \
 npx tsx patch_file.ts Geo.h \
      "class SketcherExport" \
      "class"
+
+# The native build additionally removes the Boost.Graph dependency and carries
+# the diagnoseFull() extension. Re-apply native/patches/remove-boost.patch after
+# this script when the native sources are regenerated.
 

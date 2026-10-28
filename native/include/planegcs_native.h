@@ -43,6 +43,7 @@ typedef enum pgcs_result_code
     PGCS_RESULT_SUCCESS = 0,
     PGCS_RESULT_CONVERGED = 1,
     PGCS_RESULT_FAILED = 2,
+    PGCS_RESULT_SUCCESSFUL_SOLUTION_INVALID = 3,
 
     /* Error codes (any other API function). */
     PGCS_ERROR_INVALID_ARGUMENT = -1,
@@ -52,7 +53,7 @@ typedef enum pgcs_result_code
     PGCS_ERROR_GCS = -5
 } pgcs_result_code;
 
-/* Returns a static version string, for example "0.1.0". */
+/* Returns a static version string, for example "0.2.0". */
 PGCS_API const char* pgcs_version(void);
 
 /* Context lifecycle. */
@@ -142,10 +143,13 @@ PGCS_API int pgcs_add_p2p_distance(pgcs_context* ctx,
                                    int driving,
                                    double scale);
 
+/* Signed point-to-line distance. `ccw` selects the side of the directed line
+ * (`p1 -> p2`): 1 = positive/counter-clockwise side, 0 = opposite side. */
 PGCS_API int pgcs_add_p2l_distance(pgcs_context* ctx,
                                    int point,
                                    int line,
                                    int distance_param,
+                                   int ccw,
                                    int tag,
                                    int driving,
                                    double scale);
@@ -166,10 +170,15 @@ PGCS_API int pgcs_add_c2c_distance(pgcs_context* ctx,
                                    int driving,
                                    double scale);
 
+/* Signed circle-to-line distance. `ccw` selects the side of the directed line
+ * for the circle center. `internal` = 0 measures outside the circle
+ * (radius + distance), 1 measures inside (radius - distance). */
 PGCS_API int pgcs_add_c2l_distance(pgcs_context* ctx,
                                    int circle,
                                    int line,
                                    int distance_param,
+                                   int ccw,
+                                   int internal,
                                    int tag,
                                    int driving,
                                    double scale);
@@ -296,9 +305,12 @@ PGCS_API int pgcs_add_symmetric_point(pgcs_context* ctx,
                                       int driving,
                                       double scale);
 
+/* Line-circle/line-arc tangency. `ccw` selects the side of the directed line
+ * on which the circle/arc center lies. */
 PGCS_API int pgcs_add_tangent_line_circle(pgcs_context* ctx,
                                           int line,
                                           int circle,
+                                          int ccw,
                                           int tag,
                                           int driving,
                                           double scale);
@@ -306,6 +318,7 @@ PGCS_API int pgcs_add_tangent_line_circle(pgcs_context* ctx,
 PGCS_API int pgcs_add_tangent_line_arc(pgcs_context* ctx,
                                        int line,
                                        int arc,
+                                       int ccw,
                                        int tag,
                                        int driving,
                                        double scale);

@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(planegcs_native LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -48,7 +48,10 @@ endif()
 if(MSVC)
     target_compile_options(planegcs_native PRIVATE /W3 /EHsc /utf-8 /bigobj
         "/FI${CMAKE_CURRENT_SOURCE_DIR}/include/planegcs_prelude.h")
-    target_compile_definitions(planegcs_native PRIVATE _CRT_SECURE_NO_WARNINGS NOMINMAX)
+    target_compile_definitions(planegcs_native PRIVATE
+        _CRT_SECURE_NO_WARNINGS
+        NOMINMAX
+        _SILENCE_CXX23_DENORM_DEPRECATION_WARNING)
 else()
     target_compile_options(planegcs_native PRIVATE -Wall -Wextra)
 endif()
