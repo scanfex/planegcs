@@ -53,3 +53,7 @@ third_party/eigen.extract/
 # OS noise
 .DS_Store
 Thumbs.db
+
+# Hand-maintained Visual Studio solution (CMake output stays ignored)
+!native/msvc/*.vcxproj
+!native/msvc/*.vcxproj.filters

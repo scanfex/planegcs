@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="native">
+      <UniqueIdentifier>{C3D4E5F6-0718-492A-9B2C-3D4E5F607182}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="planegcs">
+      <UniqueIdentifier>{A1B2C3D4-E5F6-4708-9A0B-1C2D3E4F5061}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="planegcs\headers">
+      <UniqueIdentifier>{B2C3D4E5-F607-4819-8A1B-2C3D4E5F6071}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\src\planegcs_native.cpp">
+      <Filter>native</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\planegcs\GCS.cpp">
+      <Filter>planegcs</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\planegcs\Geo.cpp">
+      <Filter>planegcs</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\planegcs\Constraints.cpp">
+      <Filter>planegcs</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\planegcs\SubSystem.cpp">
+      <Filter>planegcs</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\planegcs\qp_eq.cpp">
+      <Filter>planegcs</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\include\planegcs_native.h">
+      <Filter>native</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\planegcs_prelude.h">
+      <Filter>native</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\Console.h">
+      <Filter>native</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\Base\Console.h">
+      <Filter>native</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\Base\Tools.h">
+      <Filter>native</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\planegcs\GCS.h">
+      <Filter>planegcs</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\planegcs\Geo.h">
+      <Filter>planegcs</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\planegcs\Constraints.h">
+      <Filter>planegcs</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\planegcs\SubSystem.h">
+      <Filter>planegcs</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\planegcs\qp_eq.h">
+      <Filter>planegcs</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\planegcs\Util.h">
+      <Filter>planegcs</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\planegcs\headers\FCConfig.h">
+      <Filter>planegcs\headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\planegcs\headers\FCGlobal.h">
+      <Filter>planegcs\headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\planegcs\headers\Console.h">
+      <Filter>planegcs\headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\planegcs\headers\Base\Console.h">
+      <Filter>planegcs\headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\planegcs\headers\Base\Tools.h">
+      <Filter>planegcs\headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\planegcs\headers\boost_graph_adjacency_list.hpp">
+      <Filter>planegcs\headers</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>
