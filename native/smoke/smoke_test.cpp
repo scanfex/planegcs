@@ -207,6 +207,60 @@ int solve_scale_free_shape()
     return ok ? 0 : 1;
 }
 
+int cancellation_status()
+{
+    pgcs_context* context = pgcs_create();
+    if (context == nullptr) {
+        return 1;
+    }
+
+    const int x = pgcs_add_param(context, 0.0, 0);
+    const int y = pgcs_add_param(context, 0.0, 0);
+    const int fixedX = pgcs_add_param(context, 3.0, 1);
+    const int fixedY = pgcs_add_param(context, 4.0, 1);
+    const int p1 = pgcs_add_point(context, x, y);
+    const int p2 = pgcs_add_point(context, fixedX, fixedY);
+    const int distance = pgcs_add_param(context, 5.0, 1);
+    const int tag = pgcs_add_p2p_distance(context, p1, p2, distance, 1, 1, 1.0);
+
+    pgcs_request_cancel(context);
+    const int requested = pgcs_is_cancel_requested(context);
+    const int cancelledSolve = pgcs_solve(context, PGCS_ALGORITHM_DOG_LEG);
+    const int cancelledDiagnose = pgcs_diagnose(context, PGCS_ALGORITHM_DOG_LEG);
+    const int cancelledDiagnoseFull = pgcs_diagnose_full(context);
+
+    pgcs_clear_cancel(context);
+    const int cleared = pgcs_is_cancel_requested(context);
+    const int status = pgcs_solve(context, PGCS_ALGORITHM_DOG_LEG);
+    const int applied = pgcs_apply_solution(context);
+    const int dof = pgcs_diagnose(context, PGCS_ALGORITHM_DOG_LEG);
+    const int dofFull = pgcs_diagnose_full(context);
+
+    std::printf(
+        "cancel:      tag=%d requested=%d solve=%d diagnose=%d diagnose_full=%d "
+        "cleared=%d status=%d apply=%d dof=%d dof_full=%d error='%s'\n",
+        tag,
+        requested,
+        cancelledSolve,
+        cancelledDiagnose,
+        cancelledDiagnoseFull,
+        cleared,
+        status,
+        applied,
+        dof,
+        dofFull,
+        pgcs_last_error(context)
+    );
+
+    const bool ok = tag > 0 && requested == 1 && cancelledSolve == PGCS_RESULT_CANCELLED
+                    && cancelledDiagnose == PGCS_ERROR_CANCELLED
+                    && cancelledDiagnoseFull == PGCS_ERROR_CANCELLED && cleared == 0
+                    && status == PGCS_RESULT_SUCCESS && applied == 0 && dof == 1 && dofFull == 1;
+
+    pgcs_destroy(context);
+    return ok ? 0 : 1;
+}
+
 }  // namespace
 
 int main()
@@ -216,7 +270,8 @@ int main()
     const int failures = solve_coincidence() + solve_distance()
                          + solve_p2l_distance_ccw_side(true, 2.0)
                          + solve_p2l_distance_ccw_side(false, -2.0)
-                         + solve_scale_free_shape();
+                         + solve_scale_free_shape()
+                         + cancellation_status();
 
     if (failures == 0) {
         std::printf("smoke test: OK\n");

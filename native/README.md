@@ -73,6 +73,34 @@ The script:
 4. downloads Eigen 3.4.0 into `third_party/eigen` if the headers are missing;
 5. configures and builds the DLL and the smoke test.
 
+## Visual Studio solution
+
+`native/msvc/planegcs_native.sln` is a hand-maintained Visual Studio solution
+that does not require CMake. It lives in `native/msvc/` so an accidental
+in-source CMake configure cannot overwrite it. It contains two projects:
+
+* `planegcs_native` - the DLL; compiles the wrapper and the vendored PlaneGCS
+  sources listed in `native/CMakeLists.txt`;
+* `planegcs_native_smoke` - the smoke test, linked against the DLL.
+
+Open `native/msvc/planegcs_native.sln`, select `Debug` or `Release` and `x64`,
+and build. The outputs still go to `native/out/<Configuration>/`, so the Visual
+Studio and CMake workflows overwrite the same DLL and smoke executable.
+The projects target the Visual Studio 2026 toolset (`v145`); retarget them in
+the project properties for older Visual Studio versions. The smoke test is
+listed first, so Visual Studio uses it as the default startup project and F5
+builds the DLL and runs the test.
+
+The solution can also be built from a developer command prompt:
+
+```powershell
+msbuild native\msvc\planegcs_native.sln /m /p:Configuration=Debug /p:Platform=x64
+native\out\Debug\planegcs_native_smoke.exe
+```
+
+When a source file is added to `native/CMakeLists.txt`, add it to the matching
+`.vcxproj` and `.vcxproj.filters` as well.
+
 ## C API
 
 `native/include/planegcs_native.h` is self-contained. The ABI is C, so it can be
@@ -111,8 +139,8 @@ Important points:
 * Constraint tags are supplied by the caller and are returned by the diagnostic
   functions (`pgcs_get_conflicting`, `pgcs_get_redundant`,
   `pgcs_get_partially_redundant`).
-* `pgcs_solve` returns `0` (Success), `1` (Converged), `2` (Failed) or
-  `3` (SuccessfulSolutionInvalid); negative values are errors.
+* `pgcs_solve` returns `0` (Success), `1` (Converged), `2` (Failed),
+  `3` (SuccessfulSolutionInvalid) or `4` (Cancelled); negative values are errors.
   `pgcs_last_error` describes the last error.
 * `pgcs_diagnose` recomputes DoF, conflicting and redundant tags on the current
   parameter values. Call it after `pgcs_apply_solution()` so the diagnostics
@@ -131,6 +159,31 @@ Important points:
 * `pgcs_add_c2l_distance` also takes an `internal` flag. `internal = 0` measures
   the gap outside the circle (`radius + distance`), `internal = 1` measures it
   inside (`radius - distance`).
+
+## Cancellation
+
+Cancellation is cooperative. `pgcs_request_cancel()` sets an atomic flag in the
+context and may be called from another thread while a solve or diagnosis is
+running; only the flag is written, so it is safe. `pgcs_clear_cancel()` resets
+it and `pgcs_is_cancel_requested()` reads it.
+
+```c
+pgcs_clear_cancel(ctx);
+int status = pgcs_solve(ctx, PGCS_ALGORITHM_DOG_LEG);
+if (status == PGCS_RESULT_CANCELLED) {
+    /* the solver rolled the subsystem parameters back; no partial solution */
+}
+```
+
+* `pgcs_solve` returns `PGCS_RESULT_CANCELLED` (4) when interrupted.
+* `pgcs_diagnose` and `pgcs_diagnose_full` return `PGCS_ERROR_CANCELLED` (-6).
+* Checkpoints are inside the BFGS/LM/DogLeg iteration loops, the subsystem
+  loop, the dual-system redundant solver, the conflict/redundancy group loop of
+  `diagnose`, and before each row rank computation of `diagnoseFull`. The Eigen
+  QR and SVD decompositions are not patched: those calls run to completion, and
+  interruption is observed between them.
+* Without a cancellation request the behavior and numerical results are exactly
+  the same as before; the checks do not participate in the computation.
 
 ## Why Boost is not needed
 
@@ -155,12 +208,14 @@ The patch is portable: the browser/WASM build can use the same sources.
 
 Other local changes on top of the FreeCAD snapshot are kept in the sources
 themselves: removing the FreeCAD `SketcherGlobal.h`/`SketcherExport` dependency,
-the union-find component partitioning, and the native-only
-`System::diagnoseFull()` full-Jacobian rank diagnosis. `planegcs/update_freecad.sh`
-applies the textual FreeCAD patches; the Boost and `diagnoseFull` changes must be
-carried over separately if the snapshot is replaced. That script also comments
-out the two `fut.wait()` calls for the WASM build; the native snapshot keeps
-them, so restore both calls when regenerating native sources.
+the union-find component partitioning, the native-only
+`System::diagnoseFull()` full-Jacobian rank diagnosis, and the cooperative
+cancellation flag with its loop checkpoints (`System::setCancelFlag`,
+`markCancelledIfRequested`, `SolveStatus::Cancelled`). `planegcs/update_freecad.sh`
+applies the textual FreeCAD patches; the Boost, `diagnoseFull` and cancellation
+changes must be carried over separately if the snapshot is replaced. That script
+also comments out the two `fut.wait()` calls for the WASM build; the native
+snapshot keeps them, so restore both calls when regenerating native sources.
 
 `native/include/planegcs_prelude.h` is force-included with `/FI` for MSVC. The
 upstream code relied on libstdc++/Emscripten to pull in `<cmath>`, `<cassert>`,

@@ -24,6 +24,8 @@
 
 #pragma once
 
+#include <atomic>
+
 #include <Eigen/QR>
 
 #include "SubSystem.h"
@@ -56,6 +58,7 @@ enum class SolveStatus : uint8_t
     Failed = 2,                     // Failed to find any solution
     SuccessfulSolutionInvalid = 3,  // This is a solution where the solver succeeded, but the
                                     // resulting geometry is OCE-invalid
+    Cancelled = 4,                  // The computation was interrupted by a cancellation request
 };
 
 enum Algorithm : uint8_t
@@ -145,6 +148,29 @@ private:
     bool isInit;        // if plists, clists, reductionmaps are up to date
 
     bool emptyDiagnoseMatrix;  // false only if there is at least one driving constraint.
+
+    // Cooperative cancellation. The flag is owned by the caller (the native
+    // wrapper owns an atomic flag in its context) and may be written from
+    // another thread. A nullptr flag means cancellation is never requested.
+    const std::atomic<bool>* cancelFlag = nullptr;
+    bool cancelled = false;
+
+    bool cancellationRequested() const
+    {
+        return cancelFlag != nullptr && cancelFlag->load(std::memory_order_relaxed);
+    }
+
+    // Marks the current operation as cancelled when a cancellation was
+    // requested. Returns true when the caller must stop its computation.
+    bool markCancelledIfRequested()
+    {
+        if (!cancellationRequested()) {
+            return false;
+        }
+
+        cancelled = true;
+        return true;
+    }
 
     SolveStatus solve_BFGS(SubSystem* subsys, bool isRedundantsolving = false);
     SolveStatus solve_LM(SubSystem* subsys, bool isRedundantsolving = false);
@@ -657,6 +683,24 @@ public:
     bool isEmptyDiagnoseMatrix() const
     {
         return emptyDiagnoseMatrix;
+    }
+
+    // Cooperative cancellation API. The flag pointer must stay valid for the
+    // duration of the solve/diagnose calls. resetCancellationState() must be
+    // called before starting a new top-level operation.
+    void setCancelFlag(const std::atomic<bool>* flag)
+    {
+        cancelFlag = flag;
+    }
+
+    bool wasCancelled() const
+    {
+        return cancelled;
+    }
+
+    void resetCancellationState()
+    {
+        cancelled = false;
     }
 
     bool hasConflicting() const

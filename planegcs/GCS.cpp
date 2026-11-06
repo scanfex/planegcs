@@ -1930,11 +1930,18 @@ SolveStatus System::solve(VEC_pD& params, Algorithm alg, bool isRedundantsolving
 {
     declareUnknowns(params);
     initSolution(alg);
+    if (wasCancelled()) {
+        return SolveStatus::Cancelled;
+    }
     return solve(alg, isRedundantsolving);
 }
 
 SolveStatus System::solve(Algorithm alg, bool isRedundantsolving)
 {
+    if (markCancelledIfRequested()) {
+        return SolveStatus::Cancelled;
+    }
+
     if (!isInit) {
         return SolveStatus::Failed;
     }
@@ -1944,6 +1951,9 @@ SolveStatus System::solve(Algorithm alg, bool isRedundantsolving)
     // even if no other system has to be solved
     auto status = SolveStatus::Success;
     for (size_t cid = 0; cid < subSystems.size(); cid++) {
+        if (markCancelledIfRequested()) {
+            return SolveStatus::Cancelled;
+        }
         if ((subSystems[cid] || subSystemsAux[cid]) && !referenceRestored) {
             restoreReference();
             referenceRestored = true;
@@ -1956,6 +1966,9 @@ SolveStatus System::solve(Algorithm alg, bool isRedundantsolving)
         }
         else if (subSystemsAux[cid]) {
             status = solve(subSystemsAux[cid], alg, isRedundantsolving);
+        }
+        if (status == SolveStatus::Cancelled) {
+            return status;
         }
     }
     if (status == SolveStatus::Success) {
@@ -2042,6 +2055,11 @@ SolveStatus System::solve_BFGS(SubSystem* subsys, bool isRedundantsolving)
     double h_norm {};
 
     for (int iter = 1; iter < maxIterNumber; ++iter) {
+        if (markCancelledIfRequested()) {
+            subsys->revertParams();
+            return SolveStatus::Cancelled;
+        }
+
         h_norm = h.norm();
         if (h_norm <= convCriterion || err <= smallF) {
             if (debugMode == IterationLevel) {
@@ -2167,6 +2185,11 @@ SolveStatus System::solve_LM(SubSystem* subsys, bool isRedundantsolving)
     double nu = 2, mu = 0;
     int iter = 0, stop = 0;
     for (iter = 0; iter < maxIterNumber && !stop; ++iter) {
+        if (markCancelledIfRequested()) {
+            subsys->revertParams();
+            return SolveStatus::Cancelled;
+        }
+
         // check error
         double err = e.squaredNorm();
         if (err <= eps * eps) {
@@ -2360,6 +2383,11 @@ SolveStatus System::solve_DL(SubSystem* subsys, bool isRedundantsolving)
     double nu = 2.;
     int iter = 0, stop = 0, reduce = 0;
     while (!stop) {
+        if (markCancelledIfRequested()) {
+            subsys->revertParams();
+            return SolveStatus::Cancelled;
+        }
+
         // check if finished
         if (fx_inf <= tolf) {
             // Success
@@ -4611,6 +4639,12 @@ SolveStatus System::solve(SubSystem* subsysA, SubSystem* subsysB, bool isRedunda
     double mu = 0;
     lambda.setZero();
     for (int iter = 1; iter < maxIterNumber; iter++) {
+        if (markCancelledIfRequested()) {
+            subsysA->revertParams();
+            subsysB->revertParams();
+            return SolveStatus::Cancelled;
+        }
+
         int status = qp_eq(B, grad, JA, resA, xdir, Y, Z);
         if (status) {
             break;
@@ -4773,6 +4807,14 @@ void System::makeReducedJacobian(
     int jacobianconstraintcount = 0;
     int allcount = 0;
     for (auto& constr : clist) {
+        if (markCancelledIfRequested()) {
+            jacobianconstraintmap.clear();
+            pdiagnoselist.clear();
+            tagmultiplicity.clear();
+            J.resize(0, 0);
+            return;
+        }
+
         constr->revertParams();
         ++allcount;
         if (constr->getTag() >= 0 && constr->isDriving()) {
@@ -4852,6 +4894,10 @@ int System::diagnoseFull()
         return dofs;
     }
 
+    if (markCancelledIfRequested()) {
+        return dofs;
+    }
+
     Eigen::MatrixXd jacobian;
     std::map<int, int> jacobianconstraintmap;
     VEC_pD pdiagnoselist;
@@ -4859,15 +4905,33 @@ int System::diagnoseFull()
 
     makeReducedJacobian(jacobian, jacobianconstraintmap, pdiagnoselist, tagmultiplicity);
 
+    if (markCancelledIfRequested()) {
+        hasDiagnosis = false;
+        dofs = -1;
+        redundantTags.clear();
+        return dofs;
+    }
+
     Eigen::MatrixXd driving(jacobianconstraintmap.size(), pdiagnoselist.size());
     std::vector<int> tags;
     tags.reserve(jacobianconstraintmap.size());
 
     int row = 0;
     for (const auto& entry : jacobianconstraintmap) {
+        if (markCancelledIfRequested()) {
+            hasDiagnosis = false;
+            dofs = -1;
+            redundantTags.clear();
+            return dofs;
+        }
+
         driving.row(row) = jacobian.row(entry.first);
         tags.push_back(clist[entry.second]->getTag());
         ++row;
+    }
+
+    if (markCancelledIfRequested()) {
+        return dofs;
     }
 
     const int rank = denseRank(driving);
@@ -4876,6 +4940,13 @@ int System::diagnoseFull()
     emptyDiagnoseMatrix = driving.rows() == 0;
 
     for (int index = 0; index < driving.rows(); ++index) {
+        if (markCancelledIfRequested()) {
+            hasDiagnosis = false;
+            dofs = -1;
+            redundantTags.clear();
+            return dofs;
+        }
+
         Eigen::MatrixXd reduced(driving.rows() - 1, driving.cols());
         int destination = 0;
         for (int source = 0; source < driving.rows(); ++source) {
@@ -4888,6 +4959,13 @@ int System::diagnoseFull()
         if (denseRank(reduced) == rank) {
             redundantTags.push_back(tags[index]);
         }
+    }
+
+    if (markCancelledIfRequested()) {
+        hasDiagnosis = false;
+        dofs = -1;
+        redundantTags.clear();
+        return dofs;
     }
 
     std::sort(redundantTags.begin(), redundantTags.end());
@@ -4911,6 +4989,10 @@ int System::diagnose(Algorithm alg)
     //         two high priority constraints. For this reason, tagging
     //         constraints with 0 should be used carefully.
     hasDiagnosis = false;
+    if (markCancelledIfRequested()) {
+        dofs = -1;
+        return dofs;
+    }
     if (!hasUnknowns) {
         dofs = -1;
         return dofs;
@@ -4965,6 +5047,12 @@ int System::diagnose(Algorithm alg)
     std::map<int, int> tagmultiplicity;
 
     makeReducedJacobian(J, jacobianconstraintmap, pdiagnoselist, tagmultiplicity);
+
+    if (markCancelledIfRequested()) {
+        hasDiagnosis = false;
+        dofs = -1;
+        return dofs;
+    }
 
     // this function will exit with a diagnosis and, unless overridden by functions below, with full
     // DoFs
@@ -5085,6 +5173,12 @@ int System::diagnose(Algorithm alg)
 
         fut.wait();  // wait for the execution of identifyDependentParametersSparseQR to finish
 
+        if (markCancelledIfRequested()) {
+            hasDiagnosis = false;
+            dofs = -1;
+            return dofs;
+        }
+
         dofs = paramsNum - rank;  // unless overconstraint, which will be overridden below
 
         // Detecting conflicting or redundant constraints
@@ -5102,6 +5196,11 @@ int System::diagnose(Algorithm alg)
                 rank,
                 nonredundantconstrNum
             );
+            if (markCancelledIfRequested()) {
+                hasDiagnosis = false;
+                dofs = -1;
+                return dofs;
+            }
             if (paramsNum == rank && nonredundantconstrNum > rank) {  // over-constrained
                 dofs = paramsNum - nonredundantconstrNum;
             }
@@ -5164,6 +5263,12 @@ int System::diagnose(Algorithm alg)
 
         fut.wait();  // wait for the execution of identifyDependentParametersSparseQR to finish
 
+        if (markCancelledIfRequested()) {
+            hasDiagnosis = false;
+            dofs = -1;
+            return dofs;
+        }
+
         dofs = paramsNum - rank;  // unless overconstraint, which will be overridden below
 
         // Detecting conflicting or redundant constraints
@@ -5181,6 +5286,12 @@ int System::diagnose(Algorithm alg)
                 rank,
                 nonredundantconstrNum
             );
+
+            if (markCancelledIfRequested()) {
+                hasDiagnosis = false;
+                dofs = -1;
+                return dofs;
+            }
 
             if (paramsNum == rank && nonredundantconstrNum > rank) {
                 // over-constrained
@@ -5600,6 +5711,11 @@ void System::identifyConflictingRedundantConstraints(
 
     std::vector<std::vector<Constraint*>> conflictGroups(constrNum - rank);
     for (int j = rank; j < constrNum; j++) {
+        if (markCancelledIfRequested()) {
+            nonredundantconstrNum = constrNum;
+            return;
+        }
+
         for (int row = 0; row < rank; row++) {
             if (fabs(R(row, j)) > 1e-10) {
                 int origCol = qrJT.colsPermutation().indices()[row];
@@ -5626,6 +5742,11 @@ void System::identifyConflictingRedundantConstraints(
     std::set<Constraint*> skipped;
     SET_I satisfiedGroups;
     while (1) {
+        if (markCancelledIfRequested()) {
+            nonredundantconstrNum = constrNum;
+            return;
+        }
+
         // conflictingMap contains all the eligible constraints of conflict groups not yet
         // satisfied. As groups get satisfied, the map created on every iteration is smaller, until
         // such time it is empty and the infinite loop is exited. The guarantee that the loop will
@@ -5723,6 +5844,12 @@ void System::identifyConflictingRedundantConstraints(
 
     SubSystem* subSysTmp = new SubSystem(clistTmp, pdiagnoselist);
     auto status = solve(subSysTmp, alg, true);
+
+    if (status == SolveStatus::Cancelled) {
+        delete subSysTmp;
+        nonredundantconstrNum = constrNum;
+        return;
+    }
 
     if (debugMode == Minimal || debugMode == IterationLevel) {
         std::string solvername;

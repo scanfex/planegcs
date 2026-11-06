@@ -44,13 +44,15 @@ typedef enum pgcs_result_code
     PGCS_RESULT_CONVERGED = 1,
     PGCS_RESULT_FAILED = 2,
     PGCS_RESULT_SUCCESSFUL_SOLUTION_INVALID = 3,
+    PGCS_RESULT_CANCELLED = 4,
 
     /* Error codes (any other API function). */
     PGCS_ERROR_INVALID_ARGUMENT = -1,
     PGCS_ERROR_UNKNOWN = -2,
     PGCS_ERROR_INVALID_HANDLE = -3,
     PGCS_ERROR_WRONG_GEOMETRY_TYPE = -4,
-    PGCS_ERROR_GCS = -5
+    PGCS_ERROR_GCS = -5,
+    PGCS_ERROR_CANCELLED = -6
 } pgcs_result_code;
 
 /* Returns a static version string, for example "0.2.0". */
@@ -63,8 +65,25 @@ PGCS_API void pgcs_destroy(pgcs_context* ctx);
 /* Removes all parameters, geometry and constraints from the context. */
 PGCS_API void pgcs_clear(pgcs_context* ctx);
 
+/* Removes all constraints with the given tag. */
+PGCS_API int pgcs_clear_by_tag(pgcs_context* ctx, int tag);
+
 /* Human readable description of the last error in this context. Never NULL. */
 PGCS_API const char* pgcs_last_error(const pgcs_context* ctx);
+
+/* Cooperative cancellation.
+ *
+ * pgcs_request_cancel() may be called from another thread while pgcs_solve(),
+ * pgcs_diagnose() or pgcs_diagnose_full() is running: it only stores an atomic
+ * flag, no other context state is touched. The running operation stops at the
+ * next checkpoint and rolls the parameters of the interrupted subsystems back.
+ * pgcs_clear_cancel() resets the flag; call it before starting a new operation.
+ *
+ * pgcs_solve() returns PGCS_RESULT_CANCELLED when interrupted, while
+ * pgcs_diagnose()/pgcs_diagnose_full() return PGCS_ERROR_CANCELLED. */
+PGCS_API void pgcs_request_cancel(pgcs_context* ctx);
+PGCS_API void pgcs_clear_cancel(pgcs_context* ctx);
+PGCS_API int pgcs_is_cancel_requested(const pgcs_context* ctx);
 
 /* ------------------------------------------------------------------------- */
 /* Parameters                                                               */

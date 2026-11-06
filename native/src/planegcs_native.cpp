@@ -2,6 +2,7 @@
 
 #include "GCS.h"
 
+#include <atomic>
 #include <cstdint>
 #include <new>
 #include <optional>
@@ -82,6 +83,7 @@ struct pgcs_context
     std::vector<std::uint8_t> is_fixed;
     std::vector<Geometry> geometry;
     std::string last_error;
+    std::atomic<bool> cancel_requested {false};
 };
 
 namespace
@@ -110,6 +112,30 @@ int guarded(pgcs_context* context, Function&& function)
         return PGCS_ERROR_UNKNOWN;
     }
 }
+
+// Connects the context's cancellation flag to the solver for the duration of
+// one top-level operation. The flag itself stays owned by the context.
+class CancelScope
+{
+public:
+    CancelScope(System& system, std::atomic<bool>& flag)
+        : system(system)
+    {
+        system.setCancelFlag(&flag);
+        system.resetCancellationState();
+    }
+
+    ~CancelScope()
+    {
+        system.setCancelFlag(nullptr);
+    }
+
+    CancelScope(const CancelScope&) = delete;
+    CancelScope& operator=(const CancelScope&) = delete;
+
+private:
+    System& system;
+};
 
 double* require_param(pgcs_context* context, int index)
 {
@@ -300,6 +326,8 @@ PGCS_API void pgcs_clear(pgcs_context* context)
         return;
     }
 
+    context->cancel_requested.store(false, std::memory_order_relaxed);
+
     try {
         context->system.clear();
 
@@ -320,6 +348,18 @@ PGCS_API void pgcs_clear(pgcs_context* context)
     }
 }
 
+PGCS_API int pgcs_clear_by_tag(pgcs_context* context, int tag)
+{
+    return guarded(context, [&]() -> int {
+        if (tag < 0) {
+            fail(PGCS_ERROR_INVALID_ARGUMENT, "tag must be non-negative");
+        }
+
+        context->system.clearByTag(tag);
+        return 0;
+    });
+}
+
 PGCS_API const char* pgcs_last_error(const pgcs_context* context)
 {
     if (context == nullptr) {
@@ -327,6 +367,35 @@ PGCS_API const char* pgcs_last_error(const pgcs_context* context)
     }
 
     return context->last_error.c_str();
+}
+
+PGCS_API void pgcs_request_cancel(pgcs_context* context)
+{
+    if (context == nullptr) {
+        return;
+    }
+
+    // Only the atomic flag is touched here so that this call is safe from
+    // another thread while a solve or diagnose is running in the context.
+    context->cancel_requested.store(true, std::memory_order_relaxed);
+}
+
+PGCS_API void pgcs_clear_cancel(pgcs_context* context)
+{
+    if (context == nullptr) {
+        return;
+    }
+
+    context->cancel_requested.store(false, std::memory_order_relaxed);
+}
+
+PGCS_API int pgcs_is_cancel_requested(const pgcs_context* context)
+{
+    if (context == nullptr) {
+        return 0;
+    }
+
+    return context->cancel_requested.load(std::memory_order_relaxed) ? 1 : 0;
 }
 
 PGCS_API int pgcs_add_param(pgcs_context* context, double value, int is_fixed)
@@ -969,6 +1038,20 @@ PGCS_API int pgcs_add_tangent_arc_arc(pgcs_context* context,
     });
 }
 
+static void declare_unknowns(pgcs_context* context)
+{
+    std::vector<double*> unknowns;
+    unknowns.reserve(context->params.size());
+
+    for (std::size_t index = 0; index < context->params.size(); ++index) {
+        if (context->is_fixed[index] == 0) {
+            unknowns.push_back(context->params[index]);
+        }
+    }
+
+    context->system.declareUnknowns(unknowns);
+}
+
 PGCS_API int pgcs_solve(pgcs_context* context, int algorithm)
 {
     return guarded(context, [&]() -> int {
@@ -985,8 +1068,18 @@ PGCS_API int pgcs_solve(pgcs_context* context, int algorithm)
             }
         }
 
-        return static_cast<int>(
-            context->system.solve(unknowns, static_cast<Algorithm>(algorithm), false));
+        CancelScope cancelScope(context->system, context->cancel_requested);
+        const auto status = context->system.solve(
+            unknowns,
+            static_cast<Algorithm>(algorithm),
+            false
+        );
+
+        if (context->system.wasCancelled()) {
+            return PGCS_RESULT_CANCELLED;
+        }
+
+        return static_cast<int>(status);
     });
 }
 
@@ -1005,8 +1098,15 @@ PGCS_API int pgcs_diagnose(pgcs_context* context, int algorithm)
             fail(PGCS_ERROR_INVALID_ARGUMENT, "unknown algorithm");
         }
 
+        CancelScope cancelScope(context->system, context->cancel_requested);
+        declare_unknowns(context);
         context->system.invalidatedDiagnosis();
         context->system.initSolution(static_cast<Algorithm>(algorithm));
+
+        if (context->system.wasCancelled()) {
+            return PGCS_ERROR_CANCELLED;
+        }
+
         return context->system.dofsNumber();
     });
 }
@@ -1014,7 +1114,15 @@ PGCS_API int pgcs_diagnose(pgcs_context* context, int algorithm)
 PGCS_API int pgcs_diagnose_full(pgcs_context* context)
 {
     return guarded(context, [&]() -> int {
-        return context->system.diagnoseFull();
+        CancelScope cancelScope(context->system, context->cancel_requested);
+        declare_unknowns(context);
+        const int dofs = context->system.diagnoseFull();
+
+        if (context->system.wasCancelled()) {
+            return PGCS_ERROR_CANCELLED;
+        }
+
+        return dofs;
     });
 }
 
